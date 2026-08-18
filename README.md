@@ -127,6 +127,67 @@ you type. So idle is not "done", it's **"waiting on you"**.
 The top bar counts **waiting on you** separately from **working**, and waiting
 sessions get an accent stripe in the roster.
 
+## Using it
+
+### The three loops it is built for
+
+**Triage — "who needs me?"**
+Watch `waiting on you` in the top bar. Those sessions have finished a turn and
+are sitting at a prompt doing nothing until you type. Click one in `THREADS`,
+read what it ended on in the inspector, then go answer it in its terminal.
+`working` sessions need nothing from you; leave them alone.
+
+**Dispatch — "what should I start next?"**
+`ACROSS SESSIONS → ready`. The **ready to start** band is every task on the
+machine that is unblocked and unclaimed, tagged with the session that planned
+it. Blocked work is deliberately folded away so it cannot compete for
+attention.
+
+**Catch-up — "what did I miss?"**
+`ACROSS SESSIONS → feed` with **notable only** on. That filters to turns that
+completed, tools that failed, and sessions running out of context — the things
+worth knowing about after twenty minutes in another window.
+
+### Every interaction
+
+| Where | Gesture | What happens |
+| --- | --- | --- |
+| `THREADS` | click a card | Inspect that session on the left |
+| anywhere | click a session name | Rename it — `Enter` commits, `Esc` reverts |
+| anywhere | hover a session name | Colour swatches appear; click one to recolour |
+| inspector | `chat` / `files` / `tasks` / `agents` | Switch what you see about this session |
+| inspector | `thinking` / `tools` | Show or hide reasoning and tool calls in the chat |
+| `feed` | click a row | Inspect the session that produced the event |
+| `feed` | `notable only` | Filter to attention- and warning-level events |
+| `ready` | click a task | Inspect the session that owns it |
+| `ready` | expand *still blocked* | See the full dependency graphs behind the queue |
+| `QUEUE` | `⌘↵` in the box | Park an idea |
+| `QUEUE` | click the status dot | Cycle open → doing → done |
+| `QUEUE` | `launch` | Open a new terminal running `claude` seeded with that idea |
+| `QUEUE` | `past prompts` → `queue` | Promote anything you have ever typed into the queue |
+| top bar | `pinned · unfollow` | Stop pinning a session and resume following whichever is busy |
+| top bar | `☾` / `☀` | Switch theme |
+| between panes | drag | Resize; proportions persist |
+
+### Troubleshooting
+
+**A session is missing.** Sessions register themselves at `~/.claude/sessions/<pid>.json`
+on start. heddle hides any whose pid is no longer alive, so a crashed session
+disappears even though its file remains. If a *running* session is missing,
+confirm it is a CLI session — the Claude desktop app stores state elsewhere and
+is not covered.
+
+**The feed is empty.** Expected after a restart. It seeks to the end of every
+transcript rather than replaying history as though it just happened, so it fills
+in as sessions do things.
+
+**Context reads higher than expected.** The window is inferred: a session under
+200k tokens is measured against the 200k window because nothing in the
+transcript distinguishes a 1M-context model. It errs toward warning early.
+
+**Everything is empty.** Point `CLAUDE_DIR` at the right place, or confirm
+`~/.claude` exists — it is created the first time you run Claude Code.
+
 ## Themes
 
 Two, toggled with ☾/☀ in the top right and persisted to `localStorage`. Until
