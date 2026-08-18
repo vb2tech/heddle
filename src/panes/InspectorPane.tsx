@@ -93,6 +93,7 @@ export default function InspectorPane({ session, labels, onLabel }: Props) {
           key={session.sessionId}
           slug={session.slug}
           sessionId={session.sessionId}
+          working={att === 'working'}
           standing={
             att === 'working'
               ? 'Still working.'

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { fetchTranscript } from '../api'
 import type { TranscriptEvent } from '../types'
 import { relTime } from '../util'
+import Markdown from './Markdown'
 
 const MAX_EVENTS = 600
 
@@ -56,30 +57,22 @@ function verbFor(tool: string | undefined): string {
 }
 
 /**
- * Claude writes markdown, which is the opposite of plain English on screen:
- * `##`, `**bold**` and backticks are markup the reader has to parse past.
- * Strip the markers, keep the words, and split into real paragraphs.
+ * Shorten a shell command to the part that carries meaning. A leading
+ * `cd <long path> &&` is scaffolding, and absolute home paths bury the verb.
  */
-function toPlainParagraphs(raw: string): string[] {
-  const text = raw
-    .replace(/```[\s\S]*?```/g, ' (code block) ')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/^\s*[-*+]\s+/gm, '• ')
-    .replace(/^\s*(\d+)\.\s+/gm, '$1. ')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-  return text
-    .split(/\n{2,}/)
-    .map((p) => p.replace(/\n/g, ' ').trim())
-    .filter(Boolean)
+function readableCommand(raw: string): string {
+  let cmd = raw.split('\n')[0].trim()
+  // The server collapses newlines to spaces, so `cd X` may be followed by a
+  // separator or simply by the next command.
+  cmd = cmd.replace(/^cd\s+(?:'[^']*'|"[^"]*"|\S+)\s*(?:&&|;)?\s*/, '')
+  cmd = cmd.replace(/\/Users\/[^/\s]+/g, '~')
+  return cmd
 }
 
 function targetFor(e: TranscriptEvent): string {
   const raw = (e.text || '').trim()
   if (!raw) return ''
-  if (e.tool === 'Bash') return raw.split('\n')[0].slice(0, 60)
+  if (e.tool === 'Bash') return readableCommand(raw)
   // File-ish targets read better as just the filename.
   return raw.includes('/') ? raw.split('/').pop()! : raw.slice(0, 60)
 }
@@ -102,7 +95,7 @@ function foldBeats(events: TranscriptEvent[]): Beat[] {
         break
       case 'assistant': {
         const b = cur ?? (cur = open(e.timestamp, null))
-        for (const para of toPlainParagraphs(e.text)) b.says.push(para)
+        if (e.text.trim()) b.says.push(e.text)
         break
       }
       case 'tool_use': {
@@ -133,9 +126,10 @@ interface Props {
   sessionId: string
   /** Shown as the closing line so the digest ends with what to do next. */
   standing: string
+  working: boolean
 }
 
-export default function SessionDigest({ slug, sessionId, standing }: Props) {
+export default function SessionDigest({ slug, sessionId, standing, working }: Props) {
   const [events, setEvents] = useState<TranscriptEvent[]>([])
   const [showSteps, setShowSteps] = useState(true)
   const offset = useRef(0)
@@ -202,22 +196,24 @@ export default function SessionDigest({ slug, sessionId, standing }: Props) {
               </div>
             )}
             {b.says.map((t, i) => (
-              <p className="beat-says" key={i}>
-                {t}
-              </p>
+              <div className="beat-says" key={i}>
+                <Markdown source={t} />
+              </div>
             ))}
             {showSteps &&
               b.actions.map((a, i) => (
                 <div className="beat-step" key={i}>
-                  <span className="beat-verb">{a.verb}</span>
+                  <span className="beat-verb">
+                    {a.verb}
+                    {a.targets.length > 1 && <span className="beat-count"> ×{a.targets.length}</span>}
+                  </span>
                   {a.targets.length > 0 && (
                     <span className="beat-targets">
-                      {a.targets.length > 3
-                        ? `${a.targets.slice(0, 3).join(', ')} +${a.targets.length - 3} more`
-                        : a.targets.join(', ')}
+                      {a.targets.length > 4
+                        ? `${a.targets.slice(0, 4).join(' · ')} +${a.targets.length - 4} more`
+                        : a.targets.join(' · ')}
                     </span>
                   )}
-                  {a.targets.length > 1 && <span className="beat-count">×{a.targets.length}</span>}
                 </div>
               ))}
             {b.errors.map((t, i) => (
@@ -227,7 +223,12 @@ export default function SessionDigest({ slug, sessionId, standing }: Props) {
             ))}
           </div>
         ))}
-        {beats.length > 0 && <div className="beat-standing">{standing}</div>}
+        {beats.length > 0 && (
+          <div className={`beat-standing ${working ? 'live' : ''}`}>
+            {working && <span className="beat-pulse" />}
+            {standing}
+          </div>
+        )}
       </div>
     </div>
   )

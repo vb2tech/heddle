@@ -87,11 +87,20 @@ The default inspector tab reads the session back in prose. It is deliberately
    own prose. What makes the raw view unskimmable is that the prose sits between
    tool calls and large result blobs.
 
-So the summary keeps Claude's prose verbatim (with markdown markers stripped,
-since `##` and `**` are markup to read past, not English), folds each run of
-tool activity into one line — *edited 3 files*, *ran 2 commands* — surfaces
-failures, and closes with whether the session is still working or waiting on
-you. Free, instant, offline. The `steps` toggle hides the tool lines entirely;
+So the summary keeps Claude's prose verbatim and **renders** its markdown —
+headings, bullet and numbered lists, bold, inline code, fenced code, tables and
+quotes — through a small dependency-free renderer. An earlier version stripped
+the markup instead, which destroyed the structure that makes prose skimmable:
+lists collapsed into run-on sentences and headings became indistinguishable from
+body text. The markup was never the problem; flattening it was.
+
+Around the prose, each run of tool activity folds into one line — *ran ×3*,
+*edited 4 files* — with shell commands trimmed of their `cd …` scaffolding and
+home paths shortened to `~`. Failures are surfaced in place, and the digest
+closes with whether the session is still working (with a live marker) or how
+long it has been waiting on you.
+
+Free, instant, offline. The `steps` toggle hides the tool lines entirely, and
 `chat` is always one click away when you need the raw output.
 
 ### The activity feed (retired)
