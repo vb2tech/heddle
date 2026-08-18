@@ -1,4 +1,4 @@
-import type { FeedEvent, FileActivity, HistoryEntry, LabelMap, Snapshot, Todo, TranscriptEvent } from './types'
+import type { FeedEvent, FileActivity, HistoryEntry, LabelMap, ParkedItem, Snapshot, TranscriptEvent } from './types'
 
 const BASE = '/api'
 
@@ -35,19 +35,19 @@ export function fetchTranscript(slug: string, sessionId: string, offset = 0) {
   return req<{ events: TranscriptEvent[]; offset: number; size: number }>(`/transcript?${q}`)
 }
 
-export const fetchTodos = () => req<{ todos: Todo[] }>('/todos')
+export const fetchParked = () => req<{ parked: ParkedItem[] }>('/parking')
 
-export const createTodo = (text: string, cwd = '') =>
-  req<{ todos: Todo[] }>('/todos', { method: 'POST', body: JSON.stringify({ text, cwd }) })
+export const createParked = (text: string, cwd = '') =>
+  req<{ parked: ParkedItem[] }>('/parking', { method: 'POST', body: JSON.stringify({ text, cwd }) })
 
-export const updateTodo = (id: string, patch: Partial<Todo>) =>
-  req<{ todos: Todo[] }>('/todos', { method: 'PATCH', body: JSON.stringify({ id, ...patch }) })
+export const updateParked = (id: string, patch: Partial<ParkedItem>) =>
+  req<{ parked: ParkedItem[] }>('/parking', { method: 'PATCH', body: JSON.stringify({ id, ...patch }) })
 
-export const deleteTodo = (id: string) =>
-  req<{ todos: Todo[] }>('/todos', { method: 'DELETE', body: JSON.stringify({ id }) })
+export const deleteParked = (id: string) =>
+  req<{ parked: ParkedItem[] }>('/parking', { method: 'DELETE', body: JSON.stringify({ id }) })
 
-export const reorderTodos = (ids: string[]) =>
-  req<{ todos: Todo[] }>('/todos/reorder', { method: 'POST', body: JSON.stringify({ ids }) })
+export const reorderParked = (ids: string[]) =>
+  req<{ parked: ParkedItem[] }>('/parking/reorder', { method: 'POST', body: JSON.stringify({ ids }) })
 
 export const fetchHistory = (limit = 300) =>
   req<{ history: HistoryEntry[] }>(`/history?limit=${limit}`)
@@ -71,6 +71,6 @@ export const setLabel = (sessionId: string, patch: { label?: string; color?: str
  */
 export const spawnSession = (
   cwd: string,
-  opts: { sessionId?: string; prompt?: string; todoId?: string } = {},
+  opts: { sessionId?: string; prompt?: string; parkedId?: string } = {},
 ) =>
   req<{ ok: boolean }>('/spawn', { method: 'POST', body: JSON.stringify({ cwd, ...opts }) })

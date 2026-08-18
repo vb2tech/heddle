@@ -3,11 +3,12 @@ import { fetchFiles } from '../api'
 import type { FileActivity, LabelMap, Session } from '../types'
 import { attentionOf } from '../attention'
 import SessionTranscript from '../components/SessionTranscript'
+import SessionDigest from '../components/SessionDigest'
 import SessionLabelEditor, { colorOf } from '../components/SessionLabel'
 import TaskGraph from '../components/TaskGraph'
 import { compactNum, contextPct, relTime, shortModel } from '../util'
 
-type Tab = 'chat' | 'files' | 'tasks' | 'agents'
+type Tab = 'summary' | 'chat' | 'files' | 'tasks' | 'agents'
 
 interface Props {
   session: Session | null
@@ -21,7 +22,7 @@ interface Props {
  * depth than a terminal scrollback conveniently shows.
  */
 export default function InspectorPane({ session, labels, onLabel }: Props) {
-  const [tab, setTab] = useState<Tab>('chat')
+  const [tab, setTab] = useState<Tab>('summary')
   const [showThinking, setShowThinking] = useState(false)
   const [showTools, setShowTools] = useState(true)
 
@@ -87,6 +88,19 @@ export default function InspectorPane({ session, labels, onLabel }: Props) {
         )}
       </div>
 
+      {tab === 'summary' && (
+        <SessionDigest
+          key={session.sessionId}
+          slug={session.slug}
+          sessionId={session.sessionId}
+          standing={
+            att === 'working'
+              ? 'Still working.'
+              : `Finished — waiting on you for ${relTime(session.statusUpdatedAt)}.`
+          }
+        />
+      )}
+
       {tab === 'chat' && (
         <SessionTranscript
           key={session.sessionId}
@@ -142,7 +156,7 @@ function Tabs({
   setTab: (t: Tab) => void
   counts: Record<string, number | null>
 }) {
-  const items: Tab[] = ['chat', 'files', 'tasks', 'agents']
+  const items: Tab[] = ['summary', 'chat', 'files', 'tasks', 'agents']
   return (
     <>
       {items.map((t) => (

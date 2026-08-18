@@ -15,8 +15,9 @@ import { createFeed } from './feed.mjs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 const DATA_DIR = path.join(ROOT, 'data')
-const TODOS_FILE = path.join(DATA_DIR, 'todos.json')
-const LEGACY_IDEAS_FILE = path.join(DATA_DIR, 'ideas.json')
+const PARKING_FILE = path.join(DATA_DIR, 'parking.json')
+// Earlier names for the same list; read once so an existing list migrates.
+const LEGACY_FILES = [path.join(DATA_DIR, 'todos.json'), path.join(DATA_DIR, 'ideas.json')]
 const LABELS_FILE = path.join(DATA_DIR, 'labels.json')
 
 const PORT = Number(process.env.PORT || 4317)
@@ -24,13 +25,14 @@ const HOST = '127.0.0.1'
 const POLL_MS = Number(process.env.POLL_MS || 1000)
 const SERVE_DIST = process.argv.includes('--serve-dist')
 
-// ------------------------------------------------------------------- todos
+// ----------------------------------------------------------------- parking
 
-// Your durable backlog, distinct from the per-session task lists Claude builds
-// for itself: these span sessions and projects and outlive any of them.
-// Array order is the user's manual ordering — no separate sort key to drift.
+// The parking lot: things you have decided matter, parked until you get to
+// them. Distinct from the per-session task lists Claude builds for itself —
+// those die with the plan, these span sessions and projects and outlive them.
+// Array order is the manual ordering; no separate sort key to drift out of sync.
 function loadTodos() {
-  for (const file of [TODOS_FILE, LEGACY_IDEAS_FILE]) {
+  for (const file of [PARKING_FILE, ...LEGACY_FILES]) {
     try {
       const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
       if (Array.isArray(parsed)) return parsed
@@ -43,7 +45,7 @@ function loadTodos() {
 
 function saveTodos(todos) {
   fs.mkdirSync(DATA_DIR, { recursive: true })
-  fs.writeFileSync(TODOS_FILE, JSON.stringify(todos, null, 2))
+  fs.writeFileSync(PARKING_FILE, JSON.stringify(todos, null, 2))
 }
 
 const ADOPT_WINDOW_MS = 5 * 60 * 1000
@@ -101,7 +103,7 @@ const feed = createFeed()
 
 let lastSnapshot = snapshot()
 feed.update(lastSnapshot)
-lastSnapshot = { ...lastSnapshot, feed: feed.list(), todos: loadTodos() }
+lastSnapshot = { ...lastSnapshot, parked: loadTodos() }
 let lastSerialized = JSON.stringify({ ...lastSnapshot, at: 0 })
 
 function broadcast(event, data) {
@@ -121,7 +123,7 @@ function poll() {
     next = snapshot()
     feed.update(next)
     adoptLaunchedTodos(next.sessions)
-    next = { ...next, feed: feed.list(), todos: loadTodos() }
+    next = { ...next, parked: loadTodos() }
   } catch (err) {
     console.error('[poll] snapshot failed:', err.message)
     return
@@ -263,8 +265,8 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { history: readHistory(Number(url.searchParams.get('limit') || 300)) })
     }
 
-    if (pathname === '/api/todos') {
-      if (req.method === 'GET') return json(res, 200, { todos: loadTodos() })
+    if (pathname === '/api/parking') {
+      if (req.method === 'GET') return json(res, 200, { parked: loadTodos() })
 
       if (req.method === 'POST') {
         const body = await readBody(req)
@@ -283,7 +285,7 @@ const server = http.createServer(async (req, res) => {
         }
         todos.unshift(todo)
         saveTodos(todos)
-        return json(res, 200, { todos })
+        return json(res, 200, { parked: todos })
       }
 
       if (req.method === 'PATCH') {
@@ -301,19 +303,19 @@ const server = http.createServer(async (req, res) => {
         if (body.sessionId !== undefined) todo.sessionId = body.sessionId
         if (body.launchedAt !== undefined) todo.launchedAt = body.launchedAt
         saveTodos(todos)
-        return json(res, 200, { todos })
+        return json(res, 200, { parked: todos })
       }
 
       if (req.method === 'DELETE') {
         const body = await readBody(req)
         saveTodos(loadTodos().filter((t) => t.id !== body.id))
-        return json(res, 200, { todos: loadTodos() })
+        return json(res, 200, { parked: loadTodos() })
       }
     }
 
     // Manual ordering, expressed as the full id order so the array itself
     // stays the single source of truth.
-    if (pathname === '/api/todos/reorder' && req.method === 'POST') {
+    if (pathname === '/api/parking/reorder' && req.method === 'POST') {
       const body = await readBody(req)
       const ids = Array.isArray(body.ids) ? body.ids : null
       if (!ids) return json(res, 400, { error: 'ids array required' })
@@ -323,7 +325,7 @@ const server = http.createServer(async (req, res) => {
       // Anything the client did not mention keeps its place at the end.
       for (const t of todos) if (!ids.includes(t.id)) ordered.push(t)
       saveTodos(ordered)
-      return json(res, 200, { todos: ordered })
+      return json(res, 200, { parked: ordered })
     }
 
     if (pathname === '/api/labels') {
@@ -360,9 +362,9 @@ const server = http.createServer(async (req, res) => {
       const child = spawn('osascript', ['-e', osa], { stdio: 'ignore', detached: true })
       child.unref()
 
-      if (body.todoId) {
+      if (body.parkedId) {
         const todos = loadTodos()
-        const todo = todos.find((t) => t.id === body.todoId)
+        const todo = todos.find((t) => t.id === body.parkedId)
         if (todo) {
           todo.status = 'doing'
           todo.launchedAt = Date.now()

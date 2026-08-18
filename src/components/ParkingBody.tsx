@@ -1,32 +1,33 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { createTodo, deleteTodo, fetchHistory, reorderTodos, spawnSession, updateTodo } from '../api'
-import type { HistoryEntry, LabelMap, Session, Todo } from '../types'
+import { createParked, deleteParked, fetchHistory, reorderParked, spawnSession, updateParked } from '../api'
+import type { HistoryEntry, LabelMap, ParkedItem, Session } from '../types'
 import { attentionOf } from '../attention'
-import { displayName } from '../components/SessionLabel'
+import { displayName } from './SessionLabel'
 import { relTime } from '../util'
 
-type Tab = 'todo' | 'history'
+type Tab = 'parked' | 'history'
 
-const NEXT_STATUS: Record<string, Todo['status']> = { open: 'doing', doing: 'done', done: 'open' }
+const NEXT_STATUS: Record<string, ParkedItem['status']> = { open: 'doing', doing: 'done', done: 'open' }
 
 interface Props {
-  todos: Todo[]
+  parked: ParkedItem[]
   sessions: Session[]
   labels: LabelMap
   focus: Session | null
   onSelect: (id: string) => void
   /** Optimistic local echo, corrected by the next snapshot. */
-  onTodos: (todos: Todo[]) => void
+  onParked: (parked: ParkedItem[]) => void
 }
 
 /**
- * Your durable backlog, grouped by project. Distinct from the task lists Claude
- * builds for itself: those are per-session and die with the plan, these outlive
- * every session. Launching one binds it to the session that picks it up, so an
- * item in flight shows that session's live state.
+ * The parking lot: ideas parked until you get to them, grouped by project.
+ * Distinct from the task lists Claude builds for itself — those are per-session
+ * and die with the plan, these outlive every session. Launching one binds it to
+ * the session that picks it up, so a parked idea in flight shows that session's
+ * live state.
  */
-export default function TodoPane({ todos, sessions, labels, focus, onSelect, onTodos }: Props) {
-  const [tab, setTab] = useState<Tab>('todo')
+export default function ParkingBody({ parked, sessions, labels, focus, onSelect, onParked }: Props) {
+  const [tab, setTab] = useState<Tab>('parked')
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [draft, setDraft] = useState('')
   const [filter, setFilter] = useState('')
@@ -45,12 +46,12 @@ export default function TodoPane({ todos, sessions, labels, focus, onSelect, onT
   const cwds = useMemo(() => {
     const set = new Set<string>()
     for (const s of sessions) if (s.cwd) set.add(s.cwd)
-    for (const t of todos) if (t.cwd) set.add(t.cwd)
+    for (const t of parked) if (t.cwd) set.add(t.cwd)
     for (const h of history) if (h.cwd) set.add(h.cwd)
     return [...set].sort()
-  }, [sessions, todos, history])
+  }, [sessions, parked, history])
 
-  const visible = todos.filter(
+  const visible = parked.filter(
     (t) =>
       (showDone || t.status !== 'done') &&
       (!filter || t.text.toLowerCase().includes(filter.toLowerCase()) || t.project.includes(filter)),
@@ -58,7 +59,7 @@ export default function TodoPane({ todos, sessions, labels, focus, onSelect, onT
 
   // Grouped by project, but preserving the manual order within each group.
   const groups = useMemo(() => {
-    const map = new Map<string, Todo[]>()
+    const map = new Map<string, ParkedItem[]>()
     for (const t of visible) {
       const key = t.project || 'unfiled'
       if (!map.has(key)) map.set(key, [])
@@ -69,25 +70,25 @@ export default function TodoPane({ todos, sessions, labels, focus, onSelect, onT
 
   const add = async (text: string, cwd = target) => {
     if (!text.trim()) return
-    const r = await createTodo(text.trim(), cwd)
-    onTodos(r.todos)
+    const r = await createParked(text.trim(), cwd)
+    onParked(r.parked)
   }
 
-  const patch = (id: string, p: Partial<Todo>) => {
-    onTodos(todos.map((t) => (t.id === id ? { ...t, ...p } : t)))
-    updateTodo(id, p).then((r) => onTodos(r.todos)).catch(() => {})
+  const patch = (id: string, p: Partial<ParkedItem>) => {
+    onParked(parked.map((t) => (t.id === id ? { ...t, ...p } : t)))
+    updateParked(id, p).then((r) => onParked(r.parked)).catch(() => {})
   }
 
   const remove = (id: string) => {
-    onTodos(todos.filter((t) => t.id !== id))
-    deleteTodo(id).then((r) => onTodos(r.todos)).catch(() => {})
+    onParked(parked.filter((t) => t.id !== id))
+    deleteParked(id).then((r) => onParked(r.parked)).catch(() => {})
   }
 
-  const launch = async (t: Todo) => {
+  const launch = async (t: ParkedItem) => {
     const cwd = t.cwd || target
     if (!cwd) return
-    onTodos(todos.map((x) => (x.id === t.id ? { ...x, status: 'doing', launchedAt: Date.now() } : x)))
-    await spawnSession(cwd, { prompt: t.text, todoId: t.id })
+    onParked(parked.map((x) => (x.id === t.id ? { ...x, status: 'doing', launchedAt: Date.now() } : x)))
+    await spawnSession(cwd, { prompt: t.text, parkedId: t.id })
   }
 
   /** Drop `dragId` immediately before `overId` in the global order. */
@@ -95,44 +96,35 @@ export default function TodoPane({ todos, sessions, labels, focus, onSelect, onT
     const from = dragId.current
     dragId.current = null
     if (!from || from === overId) return
-    const ids = todos.map((t) => t.id).filter((id) => id !== from)
+    const ids = parked.map((t) => t.id).filter((id) => id !== from)
     const at = ids.indexOf(overId)
     if (at === -1) return
     ids.splice(at, 0, from)
-    const byId = new Map(todos.map((t) => [t.id, t]))
-    onTodos(ids.map((id) => byId.get(id)!).filter(Boolean))
-    reorderTodos(ids).then((r) => onTodos(r.todos)).catch(() => {})
+    const byId = new Map(parked.map((t) => [t.id, t]))
+    onParked(ids.map((id) => byId.get(id)!).filter(Boolean))
+    reorderParked(ids).then((r) => onParked(r.parked)).catch(() => {})
   }
 
-  const openCount = todos.filter((t) => t.status !== 'done').length
-  const doingCount = todos.filter((t) => t.status === 'doing').length
-
+  // One wrapper, so the hosting pane's grid always sees a single child.
   return (
-    <section className="pane todo">
-      <header className="pane-head">
-        <div className="pane-title">
-          <span className="pane-kicker">todo</span>
-          <strong>
-            {openCount} open{doingCount ? ` · ${doingCount} in flight` : ''}
-          </strong>
-        </div>
-        <div className="pane-actions">
-          <input className="filter" placeholder="filter…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-          <button className="toggle" data-on={showDone} onClick={() => setShowDone((v) => !v)}>
-            done
-          </button>
-          <button className="toggle" data-on={tab === 'todo'} onClick={() => setTab('todo')}>
-            list
-          </button>
-          <button className="toggle" data-on={tab === 'history'} onClick={() => setTab('history')}>
-            past prompts
-          </button>
-        </div>
-      </header>
+    <div className="parking-wrap">
+      <div className="parking-controls">
+        <input className="filter" placeholder="filter…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <span className="grow" />
+        <button className="toggle" data-on={showDone} onClick={() => setShowDone((v) => !v)}>
+          done
+        </button>
+        <button className="toggle" data-on={tab === 'parked'} onClick={() => setTab('parked')}>
+          parked
+        </button>
+        <button className="toggle" data-on={tab === 'history'} onClick={() => setTab('history')}>
+          past prompts
+        </button>
+      </div>
 
       <div className="idea-compose">
         <textarea
-          placeholder="Add a todo…  (⌘⏎)"
+          placeholder="Park an idea…  (⌘⏎)"
           value={draft}
           rows={2}
           onChange={(e) => setDraft(e.target.value)}
@@ -159,22 +151,22 @@ export default function TodoPane({ todos, sessions, labels, focus, onSelect, onT
               setDraft('')
             }}
           >
-            add
+            park
           </button>
         </div>
       </div>
 
       <div className="pane-scroll">
-        {tab === 'todo' &&
+        {tab === 'parked' &&
           (groups.length ? (
             groups.map(([project, items]) => (
-              <div className="todo-group" key={project}>
+              <div className="parked-group" key={project}>
                 <div className="queue-title">
                   {project}
                   <span className="muted">{items.length}</span>
                 </div>
                 {items.map((t) => (
-                  <TodoRow
+                  <ParkedRow
                     key={t.id}
                     t={t}
                     sessions={sessions}
@@ -193,7 +185,7 @@ export default function TodoPane({ todos, sessions, labels, focus, onSelect, onT
             ))
           ) : (
             <div className="empty">
-              {todos.length ? 'Nothing matches.' : 'Nothing queued. Add one above, or promote a past prompt.'}
+              {parked.length ? 'Nothing matches.' : 'Nothing parked. Park an idea above, or promote a past prompt.'}
             </div>
           ))}
 
@@ -209,7 +201,7 @@ export default function TodoPane({ todos, sessions, labels, focus, onSelect, onT
                   <span className="grow" />
                   <span className="muted">{relTime(h.timestamp)}</span>
                   <button className="ghost-btn" onClick={() => add(h.text, h.cwd)}>
-                    queue
+                    park
                   </button>
                 </div>
               ))
@@ -217,11 +209,11 @@ export default function TodoPane({ todos, sessions, labels, focus, onSelect, onT
             <div className="empty">No prompt history.</div>
           ))}
       </div>
-    </section>
+    </div>
   )
 }
 
-function TodoRow({
+function ParkedRow({
   t,
   sessions,
   labels,
@@ -234,7 +226,7 @@ function TodoRow({
   onDragStart,
   onDropOn,
 }: {
-  t: Todo
+  t: ParkedItem
   sessions: Session[]
   labels: LabelMap
   canLaunch: boolean
@@ -252,7 +244,7 @@ function TodoRow({
 
   return (
     <div
-      className={`idea todo-row ${t.status} ${over ? 'over' : ''}`}
+      className={`idea parked-row ${t.status} ${over ? 'over' : ''}`}
       draggable
       onDragStart={onDragStart}
       onDragOver={(e) => {
@@ -266,12 +258,12 @@ function TodoRow({
         onDropOn()
       }}
     >
-      <div className="todo-main">
+      <div className="parked-main">
         <button className={`task-dot ${t.status}`} onClick={onCycle} title={`status: ${t.status} — click to cycle`} />
         <span className="idea-text">{t.text}</span>
         <span className="grow" />
         <span className="muted">{relTime(t.createdAt)}</span>
-        <button className="ghost-btn" disabled={!canLaunch} title="Open a new terminal running this" onClick={onLaunch}>
+        <button className="ghost-btn" disabled={!canLaunch} title="Open a new terminal running this idea" onClick={onLaunch}>
           launch
         </button>
         <button className="ghost-btn danger" onClick={onRemove}>
@@ -280,9 +272,9 @@ function TodoRow({
       </div>
 
       {bound && (
-        <button className="todo-link" onClick={() => onSelect(bound.sessionId)} title="Inspect this session">
+        <button className="parked-link" onClick={() => onSelect(bound.sessionId)} title="Inspect this session">
           <span className={`dot ${bound.status}`} />
-          <span className="todo-link-name">{displayName(bound, labels[bound.sessionId])}</span>
+          <span className="parked-link-name">{displayName(bound, labels[bound.sessionId])}</span>
           <span className={`att att-${attentionOf(bound)}`}>
             {attentionOf(bound) === 'working' ? 'working' : `waiting ${relTime(bound.statusUpdatedAt)}`}
           </span>
@@ -294,7 +286,7 @@ function TodoRow({
       )}
 
       {waitingToAdopt && (
-        <div className="todo-link pending">
+        <div className="parked-link pending">
           <span className="dot" />
           <span className="muted">launched — waiting for the session to register…</span>
         </div>

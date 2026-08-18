@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
-import type { FeedEvent, LabelMap, Snapshot, Task } from '../types'
+import type { LabelMap, ParkedItem, Session, Snapshot, Task } from '../types'
 import { displayName } from '../components/SessionLabel'
+import ParkingBody from '../components/ParkingBody'
 import JobRow from '../components/JobRow'
 import TaskGraph from '../components/TaskGraph'
-import { relTime } from '../util'
 
-type Tab = 'feed' | 'ready' | 'jobs'
+
+type Tab = 'parking' | 'ready' | 'jobs'
 
 interface QueueItem {
   task: Task
@@ -17,17 +18,18 @@ interface QueueItem {
 interface Props {
   snap: Snapshot
   labels: LabelMap
-  focusId: string | null
+  focus: Session | null
   onSelect: (id: string) => void
+  onParked: (parked: ParkedItem[]) => void
+  parked: ParkedItem[]
 }
 
 /**
  * The cross-session half: what just happened anywhere, what is startable
  * anywhere, and what the daemon is doing. Nothing here is scoped to one thread.
  */
-export default function CrossPane({ snap, labels, focusId, onSelect }: Props) {
-  const [tab, setTab] = useState<Tab>('feed')
-  const [onlyAttn, setOnlyAttn] = useState(false)
+export default function CrossPane({ snap, labels, focus, onSelect, onParked, parked }: Props) {
+  const [tab, setTab] = useState<Tab>('parking')
 
   const lists = useMemo(() => {
     const live = snap.sessions
@@ -67,31 +69,26 @@ export default function CrossPane({ snap, labels, focusId, onSelect }: Props) {
     return { running, ready, blocked }
   }, [lists])
 
-  const feed = snap.feed || []
-  const shownFeed = onlyAttn ? feed.filter((e) => e.severity !== 'info') : feed
+  const openParked = parked.filter((t) => t.status !== 'done').length
+  const inFlight = parked.filter((t) => t.status === 'doing').length
   const activeJobs = snap.jobs.filter((j) => j.state !== 'done' && j.state !== 'failed').length
 
   return (
     <section className="pane cross">
       <header className="pane-head">
         <div className="pane-title">
-          <span className="pane-kicker">across sessions</span>
+          <span className="pane-kicker">{tab === 'parking' ? 'parking lot' : 'across sessions'}</span>
           <strong>
-            {tab === 'feed'
-              ? `${shownFeed.length} events`
+            {tab === 'parking'
+              ? `${openParked} parked${inFlight ? ` · ${inFlight} in flight` : ''}`
               : tab === 'ready'
                 ? `${ready.length} ready · ${running.length} running`
                 : `${snap.jobs.length} jobs`}
           </strong>
         </div>
         <div className="pane-actions">
-          {tab === 'feed' && (
-            <button className="toggle" data-on={onlyAttn} onClick={() => setOnlyAttn((v) => !v)}>
-              notable only
-            </button>
-          )}
-          <button className="toggle" data-on={tab === 'feed'} onClick={() => setTab('feed')}>
-            feed
+          <button className="toggle" data-on={tab === 'parking'} onClick={() => setTab('parking')}>
+            parking
           </button>
           <button className="toggle" data-on={tab === 'ready'} onClick={() => setTab('ready')}>
             ready
@@ -102,25 +99,17 @@ export default function CrossPane({ snap, labels, focusId, onSelect }: Props) {
         </div>
       </header>
 
+      {tab === 'parking' ? (
+        <ParkingBody
+          parked={parked}
+          sessions={snap.sessions}
+          labels={labels}
+          focus={focus}
+          onSelect={onSelect}
+          onParked={onParked}
+        />
+      ) : (
       <div className="pane-scroll">
-        {tab === 'feed' &&
-          (shownFeed.length ? (
-            shownFeed.map((e) => (
-              <FeedRow
-                key={e.id}
-                e={e}
-                labels={labels}
-                snap={snap}
-                active={e.sessionId === focusId}
-                onSelect={onSelect}
-              />
-            ))
-          ) : (
-            <div className="empty">
-              Nothing yet. Events appear as sessions finish turns, hit errors, or move tasks.
-            </div>
-          ))}
-
         {tab === 'ready' && (
           <>
             <QueueGroup title="in progress" items={running} empty="Nothing claimed right now." onSelect={onSelect} />
@@ -153,51 +142,8 @@ export default function CrossPane({ snap, labels, focusId, onSelect }: Props) {
             <div className="empty">No background jobs.</div>
           ))}
       </div>
+      )}
     </section>
-  )
-}
-
-const KIND_GLYPH: Record<string, string> = {
-  turn_done: '●',
-  turn_start: '▸',
-  tool_error: '⚠',
-  ctx_high: '⚠',
-  compacted: '⇩',
-  task_done: '✓',
-  task_started: '▶',
-  task_new: '+',
-  agent_spawn: '↳',
-  session_start: '◆',
-  session_end: '◇',
-}
-
-function FeedRow({
-  e,
-  labels,
-  snap,
-  active,
-  onSelect,
-}: {
-  e: FeedEvent
-  labels: LabelMap
-  snap: Snapshot
-  active: boolean
-  onSelect: (id: string) => void
-}) {
-  const session = snap.sessions.find((s) => s.sessionId === e.sessionId)
-  const name = session ? displayName(session, labels[session.sessionId]) : e.sessionName
-  return (
-    <button
-      className={`feed-row sev-${e.severity} ${active ? 'active' : ''}`}
-      onClick={() => e.sessionId && onSelect(e.sessionId)}
-      disabled={!session}
-      title={e.text}
-    >
-      <span className="feed-time">{relTime(e.at)}</span>
-      <span className="feed-glyph">{KIND_GLYPH[e.kind] || '·'}</span>
-      <span className="feed-origin">{name}</span>
-      <span className="feed-text">{e.text}</span>
-    </button>
   )
 }
 

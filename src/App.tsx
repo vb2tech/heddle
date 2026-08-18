@@ -1,26 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchLabels, setLabel, subscribeSnapshots } from './api'
-import type { LabelMap, Session, Snapshot, Todo } from './types'
+import type { LabelMap, ParkedItem, Session, Snapshot } from './types'
 import InspectorPane from './panes/InspectorPane'
 import ThreadsPane from './panes/ThreadsPane'
 import CrossPane from './panes/CrossPane'
-import TodoPane from './panes/TodoPane'
+
 import Splitter from './components/Splitter'
 import { useTheme } from './theme'
 import { attentionOf } from './attention'
 import { compactNum } from './util'
 
-const EMPTY: Snapshot = { at: 0, sessions: [], jobs: [], ides: [], orphanTaskLists: [], recent: [], feed: [], todos: [] }
+const EMPTY: Snapshot = { at: 0, sessions: [], jobs: [], ides: [], orphanTaskLists: [], recent: [], parked: [] }
 
 const LAYOUT_KEY = 'orchestration.layout.v1'
 
 interface Layout {
   col: number // left column width, %
-  leftRow: number // chat height within left column, %
-  rightRow: number // threads height within right column, %
+  rightRow: number // threads height within the right column, %
 }
 
-const DEFAULT_LAYOUT: Layout = { col: 52, leftRow: 66, rightRow: 55 }
+const DEFAULT_LAYOUT: Layout = { col: 55, rightRow: 50 }
 
 function loadLayout(): Layout {
   try {
@@ -38,7 +37,7 @@ export default function App() {
   const [theme, toggleTheme] = useTheme()
   const [labels, setLabels] = useState<LabelMap>({})
   // Local echo so edits feel instant; the next snapshot is authoritative.
-  const [localTodos, setLocalTodos] = useState<Todo[] | null>(null)
+  const [localParked, setLocalParked] = useState<ParkedItem[] | null>(null)
   const pinned = useRef(false)
 
   useEffect(() => {
@@ -67,9 +66,9 @@ export default function App() {
     setFocusId((busy || snap.sessions[0]).sessionId)
   }, [snap.sessions, focusId])
 
-  // Snapshots carry todos, so a local echo only applies until the next push.
-  useEffect(() => setLocalTodos(null), [snap.todos])
-  const todos = localTodos ?? snap.todos
+  // Snapshots carry the parking lot, so a local echo lasts until the next push.
+  useEffect(() => setLocalParked(null), [snap.parked])
+  const parked = localParked ?? snap.parked
 
   const focus = useMemo<Session | null>(
     () => snap.sessions.find((s) => s.sessionId === focusId) || null,
@@ -113,7 +112,7 @@ export default function App() {
           <Stat label="waiting on you" value={String(stats.waiting)} tone={stats.waiting ? 'waiting' : undefined} />
           <Stat label="threads" value={String(stats.subagents)} />
           <Stat label="open tasks" value={String(stats.openTasks)} />
-          <Stat label="todo" value={String(snap.todos.filter((t) => t.status !== 'done').length)} />
+          <Stat label="parked" value={String(snap.parked.filter((t) => t.status !== 'done').length)} />
           <Stat label="ctx" value={compactNum(stats.ctx)} />
           <Stat label="jobs" value={String(snap.jobs.length)} />
           {!pinned.current ? (
@@ -135,18 +134,7 @@ export default function App() {
       </header>
 
       <div className="grid" style={{ gridTemplateColumns: `${layout.col}% 6px 1fr` }}>
-        <div className="col" style={{ gridTemplateRows: `${layout.leftRow}% 6px 1fr` }}>
-          <InspectorPane session={focus} labels={labels} onLabel={onLabel} />
-          <Splitter axis="horizontal" onDelta={(pct) => setLayout((l) => ({ ...l, leftRow: clamp(l.leftRow + pct) }))} />
-          <TodoPane
-            todos={todos}
-            sessions={snap.sessions}
-            labels={labels}
-            focus={focus}
-            onSelect={selectSession}
-            onTodos={setLocalTodos}
-          />
-        </div>
+        <InspectorPane session={focus} labels={labels} onLabel={onLabel} />
 
         <Splitter axis="vertical" onDelta={(pct) => setLayout((l) => ({ ...l, col: clamp(l.col + pct) }))} />
 
@@ -159,7 +147,14 @@ export default function App() {
             onLabel={onLabel}
           />
           <Splitter axis="horizontal" onDelta={(pct) => setLayout((l) => ({ ...l, rightRow: clamp(l.rightRow + pct) }))} />
-          <CrossPane snap={snap} labels={labels} focusId={focusId} onSelect={selectSession} />
+          <CrossPane
+            snap={snap}
+            labels={labels}
+            focus={focus}
+            onSelect={selectSession}
+            parked={parked}
+            onParked={setLocalParked}
+          />
         </div>
       </div>
     </div>

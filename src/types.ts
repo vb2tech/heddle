@@ -105,8 +105,7 @@ export interface Snapshot {
   ides: { pid: number; ideName: string; workspaceFolders: string[] }[]
   orphanTaskLists: { sessionId: string; tasks: Task[]; updatedAt: number }[]
   recent: RecentSession[]
-  feed: FeedEvent[]
-  todos: Todo[]
+  parked: ParkedItem[]
 }
 
 export type EventKind =
@@ -129,15 +128,16 @@ export interface TranscriptEvent {
   truncated?: boolean
 }
 
-export type TodoStatus = 'open' | 'doing' | 'done'
+export type ParkedStatus = 'open' | 'doing' | 'done'
 
-export interface Todo {
+/** An idea parked in the parking lot until you get to it. */
+export interface ParkedItem {
   id: string
   text: string
   project: string
   cwd: string
-  status: TodoStatus | string
-  /** Session this todo was handed to, once one has been adopted. */
+  status: ParkedStatus | string
+  /** Session this idea was handed to, once one has been adopted. */
   sessionId: string | null
   /** When `launch` fired; used to adopt the session that appears next. */
   launchedAt: number | null
