@@ -664,3 +664,28 @@ button, input, select, textarea {
   padding: 5px 6px; border-top: 1px solid var(--line-soft);
 }
 .queue-blocked summary:hover { color: var(--text); }
+
+/* --------------------------------------------------------------------- todo */
+
+.todo-group { margin-bottom: 8px; }
+
+.todo-row { flex-direction: column; align-items: stretch; gap: 3px; cursor: grab; }
+.todo-row:active { cursor: grabbing; }
+.todo-row.over { box-shadow: inset 0 2px 0 var(--accent); }
+.todo-row.doing { background: var(--busy-soft); }
+
+.todo-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.todo-main .ghost-btn { opacity: 0; }
+.todo-row:hover .ghost-btn { opacity: 1; }
+
+/* The live link from a todo to the session that picked it up. */
+.todo-link {
+  display: flex; align-items: center; gap: 6px;
+  margin-left: 13px; padding: 2px 6px;
+  background: none; border: none; border-left: 2px solid var(--accent);
+  border-radius: 0; cursor: pointer; text-align: left; min-width: 0;
+}
+.todo-link:hover { background: var(--hover); }
+.todo-link.pending { border-left-color: var(--dimmer); cursor: default; }
+.todo-link-name { font-size: 11px; font-weight: 600; white-space: nowrap; }
+.todo-link .muted:hover { color: var(--err); text-decoration: underline; }

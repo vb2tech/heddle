@@ -15,7 +15,8 @@ import { createFeed } from './feed.mjs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 const DATA_DIR = path.join(ROOT, 'data')
-const IDEAS_FILE = path.join(DATA_DIR, 'ideas.json')
+const TODOS_FILE = path.join(DATA_DIR, 'todos.json')
+const LEGACY_IDEAS_FILE = path.join(DATA_DIR, 'ideas.json')
 const LABELS_FILE = path.join(DATA_DIR, 'labels.json')
 
 const PORT = Number(process.env.PORT || 4317)
@@ -23,19 +24,57 @@ const HOST = '127.0.0.1'
 const POLL_MS = Number(process.env.POLL_MS || 1000)
 const SERVE_DIST = process.argv.includes('--serve-dist')
 
-// ------------------------------------------------------------------- ideas
+// ------------------------------------------------------------------- todos
 
-function loadIdeas() {
-  try {
-    return JSON.parse(fs.readFileSync(IDEAS_FILE, 'utf8'))
-  } catch {
-    return []
+// Your durable backlog, distinct from the per-session task lists Claude builds
+// for itself: these span sessions and projects and outlive any of them.
+// Array order is the user's manual ordering — no separate sort key to drift.
+function loadTodos() {
+  for (const file of [TODOS_FILE, LEGACY_IDEAS_FILE]) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf8'))
+      if (Array.isArray(parsed)) return parsed
+    } catch {
+      /* try the next one */
+    }
   }
+  return []
 }
 
-function saveIdeas(ideas) {
+function saveTodos(todos) {
   fs.mkdirSync(DATA_DIR, { recursive: true })
-  fs.writeFileSync(IDEAS_FILE, JSON.stringify(ideas, null, 2))
+  fs.writeFileSync(TODOS_FILE, JSON.stringify(todos, null, 2))
+}
+
+const ADOPT_WINDOW_MS = 5 * 60 * 1000
+
+/**
+ * Link a launched todo to the session it started.
+ *
+ * `claude` is spawned in a new terminal, so its session id does not exist yet
+ * when the launch returns. Instead we adopt the first session to register in
+ * that directory afterwards, which is unambiguous in practice and simply does
+ * not bind if you never launched anything. A todo can also be bound by hand.
+ */
+function adoptLaunchedTodos(sessions) {
+  const todos = loadTodos()
+  const taken = new Set(todos.map((t) => t.sessionId).filter(Boolean))
+  let changed = false
+
+  for (const t of todos) {
+    if (t.sessionId || !t.launchedAt) continue
+    if (Date.now() - t.launchedAt > ADOPT_WINDOW_MS) continue
+    const match = sessions.find(
+      (s) => s.cwd && s.cwd === t.cwd && !taken.has(s.sessionId) && s.startedAt >= t.launchedAt - 5000,
+    )
+    if (match) {
+      t.sessionId = match.sessionId
+      taken.add(match.sessionId)
+      changed = true
+    }
+  }
+  if (changed) saveTodos(todos)
+  return changed
 }
 
 // ------------------------------------------------------------------ labels
@@ -62,7 +101,7 @@ const feed = createFeed()
 
 let lastSnapshot = snapshot()
 feed.update(lastSnapshot)
-lastSnapshot = { ...lastSnapshot, feed: feed.list() }
+lastSnapshot = { ...lastSnapshot, feed: feed.list(), todos: loadTodos() }
 let lastSerialized = JSON.stringify({ ...lastSnapshot, at: 0 })
 
 function broadcast(event, data) {
@@ -81,7 +120,8 @@ function poll() {
   try {
     next = snapshot()
     feed.update(next)
-    next = { ...next, feed: feed.list() }
+    adoptLaunchedTodos(next.sessions)
+    next = { ...next, feed: feed.list(), todos: loadTodos() }
   } catch (err) {
     console.error('[poll] snapshot failed:', err.message)
     return
@@ -223,44 +263,67 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { history: readHistory(Number(url.searchParams.get('limit') || 300)) })
     }
 
-    if (pathname === '/api/ideas') {
-      if (req.method === 'GET') return json(res, 200, { ideas: loadIdeas() })
+    if (pathname === '/api/todos') {
+      if (req.method === 'GET') return json(res, 200, { todos: loadTodos() })
 
       if (req.method === 'POST') {
         const body = await readBody(req)
         const text = (body.text || '').trim()
         if (!text) return json(res, 400, { error: 'text required' })
-        const ideas = loadIdeas()
-        const idea = {
+        const todos = loadTodos()
+        const todo = {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           text,
-          project: body.project || '',
           cwd: body.cwd || '',
+          project: body.cwd ? path.basename(body.cwd) : '',
           status: 'open',
+          sessionId: null,
+          launchedAt: null,
           createdAt: Date.now(),
         }
-        ideas.unshift(idea)
-        saveIdeas(ideas)
-        return json(res, 200, { idea })
+        todos.unshift(todo)
+        saveTodos(todos)
+        return json(res, 200, { todos })
       }
 
       if (req.method === 'PATCH') {
         const body = await readBody(req)
-        const ideas = loadIdeas()
-        const idea = ideas.find((i) => i.id === body.id)
-        if (!idea) return json(res, 404, { error: 'not found' })
-        if (body.text !== undefined) idea.text = body.text
-        if (body.status !== undefined) idea.status = body.status
-        if (body.cwd !== undefined) idea.cwd = body.cwd
-        saveIdeas(ideas)
-        return json(res, 200, { idea })
+        const todos = loadTodos()
+        const todo = todos.find((t) => t.id === body.id)
+        if (!todo) return json(res, 404, { error: 'not found' })
+        if (body.text !== undefined) todo.text = String(body.text).slice(0, 2000)
+        if (body.status !== undefined) todo.status = body.status
+        if (body.cwd !== undefined) {
+          todo.cwd = body.cwd
+          todo.project = body.cwd ? path.basename(body.cwd) : ''
+        }
+        // null clears a binding; a string binds by hand.
+        if (body.sessionId !== undefined) todo.sessionId = body.sessionId
+        if (body.launchedAt !== undefined) todo.launchedAt = body.launchedAt
+        saveTodos(todos)
+        return json(res, 200, { todos })
       }
 
       if (req.method === 'DELETE') {
         const body = await readBody(req)
-        saveIdeas(loadIdeas().filter((i) => i.id !== body.id))
-        return json(res, 200, { ok: true })
+        saveTodos(loadTodos().filter((t) => t.id !== body.id))
+        return json(res, 200, { todos: loadTodos() })
       }
+    }
+
+    // Manual ordering, expressed as the full id order so the array itself
+    // stays the single source of truth.
+    if (pathname === '/api/todos/reorder' && req.method === 'POST') {
+      const body = await readBody(req)
+      const ids = Array.isArray(body.ids) ? body.ids : null
+      if (!ids) return json(res, 400, { error: 'ids array required' })
+      const todos = loadTodos()
+      const byId = new Map(todos.map((t) => [t.id, t]))
+      const ordered = ids.map((id) => byId.get(id)).filter(Boolean)
+      // Anything the client did not mention keeps its place at the end.
+      for (const t of todos) if (!ids.includes(t.id)) ordered.push(t)
+      saveTodos(ordered)
+      return json(res, 200, { todos: ordered })
     }
 
     if (pathname === '/api/labels') {
@@ -296,6 +359,18 @@ const server = http.createServer(async (req, res) => {
       const osa = `tell application "Terminal"\n activate\n do script ${appleScriptString(parts.join(' '))}\nend tell`
       const child = spawn('osascript', ['-e', osa], { stdio: 'ignore', detached: true })
       child.unref()
+
+      if (body.todoId) {
+        const todos = loadTodos()
+        const todo = todos.find((t) => t.id === body.todoId)
+        if (todo) {
+          todo.status = 'doing'
+          todo.launchedAt = Date.now()
+          todo.cwd = cwd
+          todo.sessionId = null
+          saveTodos(todos)
+        }
+      }
       return json(res, 200, { ok: true, cwd, resumed: body.sessionId || null })
     }
 

@@ -106,6 +106,7 @@ export interface Snapshot {
   orphanTaskLists: { sessionId: string; tasks: Task[]; updatedAt: number }[]
   recent: RecentSession[]
   feed: FeedEvent[]
+  todos: Todo[]
 }
 
 export type EventKind =
@@ -128,12 +129,18 @@ export interface TranscriptEvent {
   truncated?: boolean
 }
 
-export interface Idea {
+export type TodoStatus = 'open' | 'doing' | 'done'
+
+export interface Todo {
   id: string
   text: string
   project: string
   cwd: string
-  status: 'open' | 'doing' | 'done' | string
+  status: TodoStatus | string
+  /** Session this todo was handed to, once one has been adopted. */
+  sessionId: string | null
+  /** When `launch` fired; used to adopt the session that appears next. */
+  launchedAt: number | null
   createdAt: number
 }
 

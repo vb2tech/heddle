@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { fetchLabels, setLabel, subscribeSnapshots } from './api'
-import type { LabelMap, Session, Snapshot } from './types'
+import type { LabelMap, Session, Snapshot, Todo } from './types'
 import InspectorPane from './panes/InspectorPane'
 import ThreadsPane from './panes/ThreadsPane'
 import CrossPane from './panes/CrossPane'
-import IdeasPane from './panes/IdeasPane'
+import TodoPane from './panes/TodoPane'
 import Splitter from './components/Splitter'
 import { useTheme } from './theme'
 import { attentionOf } from './attention'
 import { compactNum } from './util'
 
-const EMPTY: Snapshot = { at: 0, sessions: [], jobs: [], ides: [], orphanTaskLists: [], recent: [], feed: [] }
+const EMPTY: Snapshot = { at: 0, sessions: [], jobs: [], ides: [], orphanTaskLists: [], recent: [], feed: [], todos: [] }
 
 const LAYOUT_KEY = 'orchestration.layout.v1'
 
@@ -37,6 +37,8 @@ export default function App() {
   const [layout, setLayout] = useState<Layout>(loadLayout)
   const [theme, toggleTheme] = useTheme()
   const [labels, setLabels] = useState<LabelMap>({})
+  // Local echo so edits feel instant; the next snapshot is authoritative.
+  const [localTodos, setLocalTodos] = useState<Todo[] | null>(null)
   const pinned = useRef(false)
 
   useEffect(() => {
@@ -64,6 +66,10 @@ export default function App() {
     const busy = snap.sessions.find((s) => s.status === 'busy')
     setFocusId((busy || snap.sessions[0]).sessionId)
   }, [snap.sessions, focusId])
+
+  // Snapshots carry todos, so a local echo only applies until the next push.
+  useEffect(() => setLocalTodos(null), [snap.todos])
+  const todos = localTodos ?? snap.todos
 
   const focus = useMemo<Session | null>(
     () => snap.sessions.find((s) => s.sessionId === focusId) || null,
@@ -107,6 +113,7 @@ export default function App() {
           <Stat label="waiting on you" value={String(stats.waiting)} tone={stats.waiting ? 'waiting' : undefined} />
           <Stat label="threads" value={String(stats.subagents)} />
           <Stat label="open tasks" value={String(stats.openTasks)} />
+          <Stat label="todo" value={String(snap.todos.filter((t) => t.status !== 'done').length)} />
           <Stat label="ctx" value={compactNum(stats.ctx)} />
           <Stat label="jobs" value={String(snap.jobs.length)} />
           {!pinned.current ? (
@@ -131,7 +138,14 @@ export default function App() {
         <div className="col" style={{ gridTemplateRows: `${layout.leftRow}% 6px 1fr` }}>
           <InspectorPane session={focus} labels={labels} onLabel={onLabel} />
           <Splitter axis="horizontal" onDelta={(pct) => setLayout((l) => ({ ...l, leftRow: clamp(l.leftRow + pct) }))} />
-          <IdeasPane sessions={snap.sessions} focus={focus} />
+          <TodoPane
+            todos={todos}
+            sessions={snap.sessions}
+            labels={labels}
+            focus={focus}
+            onSelect={selectSession}
+            onTodos={setLocalTodos}
+          />
         </div>
 
         <Splitter axis="vertical" onDelta={(pct) => setLayout((l) => ({ ...l, col: clamp(l.col + pct) }))} />

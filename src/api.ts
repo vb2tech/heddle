@@ -1,4 +1,4 @@
-import type { FeedEvent, FileActivity, Idea, HistoryEntry, LabelMap, Snapshot, TranscriptEvent } from './types'
+import type { FeedEvent, FileActivity, HistoryEntry, LabelMap, Snapshot, Todo, TranscriptEvent } from './types'
 
 const BASE = '/api'
 
@@ -35,16 +35,19 @@ export function fetchTranscript(slug: string, sessionId: string, offset = 0) {
   return req<{ events: TranscriptEvent[]; offset: number; size: number }>(`/transcript?${q}`)
 }
 
-export const fetchIdeas = () => req<{ ideas: Idea[] }>('/ideas')
+export const fetchTodos = () => req<{ todos: Todo[] }>('/todos')
 
-export const createIdea = (text: string, project = '', cwd = '') =>
-  req<{ idea: Idea }>('/ideas', { method: 'POST', body: JSON.stringify({ text, project, cwd }) })
+export const createTodo = (text: string, cwd = '') =>
+  req<{ todos: Todo[] }>('/todos', { method: 'POST', body: JSON.stringify({ text, cwd }) })
 
-export const updateIdea = (id: string, patch: Partial<Idea>) =>
-  req<{ idea: Idea }>('/ideas', { method: 'PATCH', body: JSON.stringify({ id, ...patch }) })
+export const updateTodo = (id: string, patch: Partial<Todo>) =>
+  req<{ todos: Todo[] }>('/todos', { method: 'PATCH', body: JSON.stringify({ id, ...patch }) })
 
-export const deleteIdea = (id: string) =>
-  req<{ ok: boolean }>('/ideas', { method: 'DELETE', body: JSON.stringify({ id }) })
+export const deleteTodo = (id: string) =>
+  req<{ todos: Todo[] }>('/todos', { method: 'DELETE', body: JSON.stringify({ id }) })
+
+export const reorderTodos = (ids: string[]) =>
+  req<{ todos: Todo[] }>('/todos/reorder', { method: 'POST', body: JSON.stringify({ ids }) })
 
 export const fetchHistory = (limit = 300) =>
   req<{ history: HistoryEntry[] }>(`/history?limit=${limit}`)
@@ -66,5 +69,8 @@ export const setLabel = (sessionId: string, patch: { label?: string; color?: str
  * Currently only reachable from the queue's "launch" action — the per-session
  * spawn button was removed as noise, but the capability is kept.
  */
-export const spawnSession = (cwd: string, opts: { sessionId?: string; prompt?: string } = {}) =>
+export const spawnSession = (
+  cwd: string,
+  opts: { sessionId?: string; prompt?: string; todoId?: string } = {},
+) =>
   req<{ ok: boolean }>('/spawn', { method: 'POST', body: JSON.stringify({ cwd, ...opts }) })
