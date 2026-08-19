@@ -1,4 +1,4 @@
-import type { FeedEvent, FileActivity, HistoryEntry, LabelMap, ParkedItem, Snapshot, TranscriptEvent } from './types'
+import type { FeedEvent, FileActivity, HistoryEntry, LabelMap, ParkedItem, SessionSummary, Snapshot, TranscriptEvent } from './types'
 
 const BASE = '/api'
 
@@ -34,6 +34,23 @@ export function fetchTranscript(slug: string, sessionId: string, offset = 0) {
   const q = new URLSearchParams({ slug, sessionId, offset: String(offset) })
   return req<{ events: TranscriptEvent[]; offset: number; size: number }>(`/transcript?${q}`)
 }
+
+export const fetchSummaries = () => req<{ summaries: SessionSummary[] }>('/summaries')
+
+export const generateSummary = (sessionId: string, slug: string) =>
+  req<{ summaries: SessionSummary[] }>('/summaries', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, slug }),
+  })
+
+export const deleteSummary = (sessionId: string) =>
+  req<{ summaries: SessionSummary[] }>('/summaries', {
+    method: 'DELETE',
+    body: JSON.stringify({ sessionId }),
+  })
+
+export const summaryMarkdown = (sessionId: string) =>
+  req<{ markdown: string }>(`/summaries/markdown?sessionId=${encodeURIComponent(sessionId)}`)
 
 export const fetchParked = () => req<{ parked: ParkedItem[] }>('/parking')
 

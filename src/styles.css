@@ -821,3 +821,45 @@ button, input, select, textarea {
   background: var(--busy); flex: none;
   animation: pulse 1.6s ease-in-out infinite;
 }
+
+/* ------------------------------------------------------------ wrapped list */
+
+.wrapped {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--pane-2);
+  margin-bottom: 6px;
+  overflow: hidden;
+}
+/* A model-written checkpoint is worth more than extracted facts; mark it. */
+.wrapped.is-wrapped { border-left: 2px solid var(--ok); }
+
+.wrapped-head {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  background: none; border: none; text-align: left;
+  padding: 6px 8px; cursor: pointer; min-width: 0;
+}
+.wrapped-head:hover { background: var(--hover); }
+.wrapped-caret { color: var(--dimmer); font-size: 10px; flex: none; }
+.wrapped-title {
+  font-weight: 600; font-size: 12px; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.wrapped-body {
+  padding: 2px 10px 6px 22px;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12px;
+}
+.wrapped-body .queue-title { border: none; margin: 6px 0 2px; padding: 0; }
+.wrapped-body .md-list { padding-left: 16px; margin-bottom: 4px; }
+.wrapped-files { color: var(--dim); font-size: 11px; margin-top: 4px; }
+
+.wrapped-actions {
+  display: flex; align-items: center; gap: 4px;
+  padding: 5px 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.wrapped-actions .ghost-btn { opacity: 0.75; }
+.wrapped:hover .wrapped-actions .ghost-btn { opacity: 1; }
+.flash { color: var(--ok); }

@@ -10,7 +10,7 @@ import { useTheme } from './theme'
 import { attentionOf } from './attention'
 import { compactNum } from './util'
 
-const EMPTY: Snapshot = { at: 0, sessions: [], jobs: [], ides: [], orphanTaskLists: [], recent: [], parked: [] }
+const EMPTY: Snapshot = { at: 0, sessions: [], jobs: [], ides: [], orphanTaskLists: [], recent: [], parked: [], summaries: [] }
 
 const LAYOUT_KEY = 'orchestration.layout.v1'
 
@@ -145,6 +145,7 @@ export default function App() {
             labels={labels}
             onSelect={selectSession}
             onLabel={onLabel}
+            onSummaries={(list) => setSnap((prev) => ({ ...prev, summaries: list }))}
           />
           <Splitter axis="horizontal" onDelta={(pct) => setLayout((l) => ({ ...l, rightRow: clamp(l.rightRow + pct) }))} />
           <CrossPane

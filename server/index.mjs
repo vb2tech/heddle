@@ -11,6 +11,15 @@ import { spawn } from 'node:child_process'
 
 import { snapshot, readTranscript, readHistory, readFileActivity, slugForCwd, CLAUDE_DIR } from './store.mjs'
 import { createFeed } from './feed.mjs'
+import {
+  adoptPendingSummaries,
+  buildSummary,
+  deleteSummary,
+  hasSummary,
+  listSummaries,
+  saveSummary,
+  toMarkdown,
+} from './summary.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
@@ -49,6 +58,34 @@ function saveTodos(todos) {
 }
 
 const ADOPT_WINDOW_MS = 5 * 60 * 1000
+
+// Sessions seen in the previous poll, so a disappearance can be noticed.
+let seenSessions = new Map()
+
+/**
+ * A session that vanished from the registry has ended. If it was never wrapped,
+ * capture the mechanical facts now — the transcript is still on disk, but this
+ * is the last moment we know the session's own metadata.
+ */
+function captureEndedSessions(sessions) {
+  const now = new Map(sessions.map((s) => [s.sessionId, s]))
+  let captured = 0
+  for (const [id, prev] of seenSessions) {
+    if (now.has(id) || hasSummary(id)) continue
+    try {
+      const summary = buildSummary(prev.slug, id, prev)
+      if (summary) {
+        saveSummary(summary)
+        captured++
+        console.log(`[summary] captured ${prev.name} (${prev.project})`)
+      }
+    } catch (err) {
+      console.error('[summary] capture failed:', err.message)
+    }
+  }
+  seenSessions = now
+  return captured
+}
 
 /**
  * Link a launched todo to the session it started.
@@ -103,7 +140,8 @@ const feed = createFeed()
 
 let lastSnapshot = snapshot()
 feed.update(lastSnapshot)
-lastSnapshot = { ...lastSnapshot, parked: loadTodos() }
+seenSessions = new Map(lastSnapshot.sessions.map((s) => [s.sessionId, s]))
+lastSnapshot = { ...lastSnapshot, parked: loadTodos(), summaries: listSummaries() }
 let lastSerialized = JSON.stringify({ ...lastSnapshot, at: 0 })
 
 function broadcast(event, data) {
@@ -123,7 +161,9 @@ function poll() {
     next = snapshot()
     feed.update(next)
     adoptLaunchedTodos(next.sessions)
-    next = { ...next, parked: loadTodos() }
+    adoptPendingSummaries(next.sessions)
+    captureEndedSessions(next.sessions)
+    next = { ...next, parked: loadTodos(), summaries: listSummaries() }
   } catch (err) {
     console.error('[poll] snapshot failed:', err.message)
     return
@@ -255,6 +295,36 @@ const server = http.createServer(async (req, res) => {
       const slug = url.searchParams.get('slug') || (cwd ? slugForCwd(cwd) : '')
       if (!sessionId || !slug) return json(res, 400, { error: 'sessionId and slug/cwd required' })
       return json(res, 200, { files: readFileActivity(slug, sessionId) })
+    }
+
+    if (pathname === '/api/summaries') {
+      if (req.method === 'GET') return json(res, 200, { summaries: listSummaries(60) })
+
+      // Generate on demand for a session that ended before heddle was watching.
+      if (req.method === 'POST') {
+        const body = await readBody(req)
+        const sessionId = body.sessionId
+        const slug = body.slug || (body.cwd ? slugForCwd(body.cwd) : '')
+        if (!sessionId || !slug) return json(res, 400, { error: 'sessionId and slug/cwd required' })
+        const known = lastSnapshot.sessions.find((s) => s.sessionId === sessionId)
+        const summary = buildSummary(slug, sessionId, known || { cwd: body.cwd || '', name: body.name || '' })
+        if (!summary) return json(res, 404, { error: 'no transcript for that session' })
+        saveSummary(summary)
+        return json(res, 200, { summaries: listSummaries(60) })
+      }
+
+      if (req.method === 'DELETE') {
+        const body = await readBody(req)
+        deleteSummary(body.sessionId)
+        return json(res, 200, { summaries: listSummaries(60) })
+      }
+    }
+
+    if (pathname === '/api/summaries/markdown') {
+      const sessionId = url.searchParams.get('sessionId')
+      const found = listSummaries(500).find((s) => s.sessionId === sessionId)
+      if (!found) return json(res, 404, { error: 'not found' })
+      return json(res, 200, { markdown: toMarkdown(found) })
     }
 
     if (pathname === '/api/feed') {

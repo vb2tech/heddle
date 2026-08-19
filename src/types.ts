@@ -106,6 +106,7 @@ export interface Snapshot {
   orphanTaskLists: { sessionId: string; tasks: Task[]; updatedAt: number }[]
   recent: RecentSession[]
   parked: ParkedItem[]
+  summaries: SessionSummary[]
 }
 
 export type EventKind =
@@ -159,3 +160,26 @@ export interface SessionLabel {
 }
 
 export type LabelMap = Record<string, SessionLabel>
+
+export interface SessionSummary {
+  sessionId: string
+  slug: string
+  /** `wrapped` was written by the model via /wrap; `extracted` is mechanical. */
+  source: 'wrapped' | 'extracted' | string
+  title: string
+  project: string
+  cwd: string
+  model: string | null
+  turns: number
+  startedAt: number
+  endedAt: number
+  wrappedAt?: number
+  asks: string[]
+  done: string[]
+  current: string
+  next: string[]
+  filesEdited: string[]
+  filesRead: string[]
+  commands: string[]
+  errors: string[]
+}

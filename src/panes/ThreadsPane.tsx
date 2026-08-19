@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import type { LabelMap, Session, Snapshot } from '../types'
+import type { LabelMap, Session, SessionSummary, Snapshot } from '../types'
 import { attentionOf, stableOrder } from '../attention'
 import SessionLabelEditor, { colorOf } from '../components/SessionLabel'
 import { compactNum, contextPct, duration, relTime, shortModel } from '../util'
+import WrappedList from '../components/WrappedList'
+import { generateSummary } from '../api'
 
 interface Props {
   snap: Snapshot
@@ -10,12 +12,13 @@ interface Props {
   labels: LabelMap
   onSelect: (id: string) => void
   onLabel: (sessionId: string, patch: { label?: string; color?: string }) => void
+  onSummaries: (s: SessionSummary[]) => void
 }
 
-type Tab = 'live' | 'recent'
+type Tab = 'live' | 'wrapped' | 'recent'
 
 /** Every stream of work on the machine: live sessions, their subagents, and resumables. */
-export default function ThreadsPane({ snap, focusId, labels, onSelect, onLabel }: Props) {
+export default function ThreadsPane({ snap, focusId, labels, onSelect, onLabel, onSummaries }: Props) {
   const [tab, setTab] = useState<Tab>('live')
   const ordered = stableOrder(snap.sessions)
   const waiting = ordered.filter((s) => attentionOf(s) === 'waiting').length
@@ -31,6 +34,9 @@ export default function ThreadsPane({ snap, focusId, labels, onSelect, onLabel }
         <div className="pane-actions">
           <button className="toggle" data-on={tab === 'live'} onClick={() => setTab('live')}>
             live
+          </button>
+          <button className="toggle" data-on={tab === 'wrapped'} onClick={() => setTab('wrapped')}>
+            wrapped{snap.summaries.length ? ` ${snap.summaries.length}` : ''}
           </button>
           <button className="toggle" data-on={tab === 'recent'} onClick={() => setTab('recent')}>
             resumable
@@ -55,6 +61,8 @@ export default function ThreadsPane({ snap, focusId, labels, onSelect, onLabel }
             <div className="empty">No Claude processes running.</div>
           ))}
 
+        {tab === 'wrapped' && <WrappedList summaries={snap.summaries} onChanged={onSummaries} />}
+
         {tab === 'recent' &&
           (snap.recent.length ? (
             snap.recent.map((r) => (
@@ -65,6 +73,17 @@ export default function ThreadsPane({ snap, focusId, labels, onSelect, onLabel }
                 </span>
                 <span className="muted">{compactNum(Math.round(r.sizeBytes / 1024))}kb</span>
                 <span className="muted">{relTime(r.updatedAt)}</span>
+                {!snap.summaries.some((s) => s.sessionId === r.sessionId) && (
+                  <button
+                    className="ghost-btn"
+                    title="Extract a summary from this session's transcript"
+                    onClick={() =>
+                      generateSummary(r.sessionId, r.slug).then((x) => onSummaries(x.summaries)).catch(() => {})
+                    }
+                  >
+                    summarise
+                  </button>
+                )}
               </div>
             ))
           ) : (

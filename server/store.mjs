@@ -154,8 +154,12 @@ export function sessionMeta(slug, sessionId) {
   const file = transcriptPath(slug, sessionId)
   if (!file) return {}
   const { lines } = tailLines(file, 512 * 1024)
-  const meta = { aiTitle: null, lastPrompt: null, mode: null, agentName: null, contextTokens: 0, model: null, turns: 0 }
+  const meta = { aiTitle: null, lastPrompt: null, mode: null, agentName: null, contextTokens: 0, model: null, turns: 0, cwd: '', gitBranch: '' }
   for (const rec of lines) {
+    // Transcript records carry cwd, which is the only source for a session that
+    // is no longer running and therefore absent from the live registry.
+    if (rec.cwd && !meta.cwd) meta.cwd = rec.cwd
+    if (rec.gitBranch && !meta.gitBranch) meta.gitBranch = rec.gitBranch
     switch (rec.type) {
       case 'ai-title':
         meta.aiTitle = rec.aiTitle

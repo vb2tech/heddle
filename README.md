@@ -8,6 +8,16 @@ dashboard, so you can hold several streams of work in your head at once.
 > you raise them one at a time. This does the same for the threads the UI shows:
 > every session visible at once, any one of them pulled forward on demand.
 
+### Installing `/wrap`
+
+Optional but recommended — it is what produces the good checkpoints:
+
+```
+cp commands/wrap.md ~/.claude/commands/
+```
+
+Then run `/wrap` in any session before you close it.
+
 ### Requirements
 
 - **Node 20.19+** (Vite 6). No other runtime dependencies.
@@ -148,6 +158,35 @@ minutes. A bound idea shows that session's live attention state and clicks
 through to it; `unlink` breaks the binding, and nothing is adopted if you never
 launched anything.
 
+### Wrapping a thread up for reuse
+
+Finished sessions are worth keeping, but only if you can *use* them again. The
+`wrapped` tab lists recently finished threads as reusable material: **copy** puts
+the checkpoint on your clipboard, **copy as prompt** phrases it as a handoff, and
+**seed new session** opens a terminal in that directory already carrying the
+context.
+
+Two things produce a checkpoint, and they are not equally good:
+
+| | How | Quality |
+| --- | --- | --- |
+| `/wrap` | You run it in a session before closing. The model has the whole conversation in context, so this costs about one cache-warm turn. | Real synthesis: *Done / In flight / Next*. |
+| automatic | heddle notices a session vanish from the registry and extracts from its transcript. | Facts only: what was asked, files changed, commands run, errors hit. |
+
+The automatic one deliberately leaves *Done* and *Next* empty. An earlier version
+tried to synthesise them from turn-closing prose and produced nonsense — the
+opening line of a reply is a lead-in, not a conclusion. Extraction can tell you
+reliably what happened; it cannot tell you what it meant. Model-written
+checkpoints are marked `wrapped`; extracted ones are marked `facts`.
+
+`/wrap` cannot know its own session id, so it writes a file tagged with the
+working directory into `~/.heddle/summaries/pending/` and heddle adopts it,
+merging the synthesis over the extracted facts. Same adoption pattern as a
+launched parked idea.
+
+Past sessions that ended before heddle was watching can be summarised on demand
+from the `resumable` tab.
+
 ### Ready queue
 
 `ready` merges every task list on the machine — live sessions and ended ones —
@@ -273,6 +312,7 @@ no process is attached to.
 | `~/.claude/history.jsonl` | Every prompt ever typed, with its project. |
 | tool calls within a transcript | Which files a session edited or read (the `files` tab). |
 | `~/.claude/ide/<pid>.lock` | Connected IDE instances. |
+| `~/.heddle/summaries/` | Session checkpoints, written by `/wrap` or extracted on session end. |
 
 The server polls every second, diffs the snapshot, and only pushes over SSE when
 something actually changed. The focused transcript is tailed separately at
@@ -300,7 +340,8 @@ earlier in a long session — which it did, in the first version.
 This tool is read-only against `~/.claude` with two exceptions, both explicit:
 
 - Parked ideas live in `data/parking.json` and session names in
-  `data/labels.json`, both owned entirely by this app. Neither is ever written
+  `data/labels.json`, both owned entirely by this app. Session checkpoints live
+  in `~/.heddle/summaries/`, outside the repo so they survive a re-clone. Neither is ever written
   back into `~/.claude`.
 - The **launch** action opens a *new* Terminal window running `claude`, seeded
   with the parked idea's text as the initial prompt.
